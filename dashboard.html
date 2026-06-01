@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Swing Exit Experiment</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace; background: #0d1117; color: #c9d1d9; min-height: 100vh; }
+  .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; border-bottom: 1px solid #21262d; padding-bottom: 16px; gap: 16px; }
+  header h1 { font-size: 22px; color: #58a6ff; }
+  .uptime { color: #8b949e; font-size: 13px; text-align: right; }
+  .callout { background: #161b22; border: 1px solid #30363d; border-left: 3px solid #58a6ff; border-radius: 6px; padding: 12px 14px; margin-bottom: 20px; font-size: 13px; line-height: 1.5; color: #8b949e; }
+  .callout strong { color: #c9d1d9; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
+  .card { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 14px; }
+  .card.highlight { border-color: #388bfd44; }
+  .card .label { font-size: 10px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .card .value { font-size: 20px; font-weight: 600; }
+  .card .sub { font-size: 11px; color: #8b949e; margin-top: 4px; }
+  .positive { color: #3fb950; }
+  .negative { color: #f85149; }
+  .neutral { color: #c9d1d9; }
+  .muted { color: #6e7681; }
+  h2 { font-size: 14px; color: #8b949e; margin: 20px 0 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  h2 .hint { font-weight: normal; text-transform: none; letter-spacing: 0; color: #484f58; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; background: #161b22; border: 1px solid #21262d; border-radius: 8px; overflow: hidden; margin-bottom: 20px; font-size: 12px; }
+  th { background: #1c2128; color: #8b949e; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 10px; text-align: left; white-space: nowrap; }
+  td { padding: 8px 10px; border-top: 1px solid #21262d; vertical-align: top; }
+  tr:hover td { background: #1c2128; }
+  .sport-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; }
+  .sport-nba { background: #1d4ed833; color: #60a5fa; }
+  .sport-mlb { background: #dc262633; color: #f87171; }
+  .sport-nhl { background: #0891b233; color: #22d3ee; }
+  .action-buy { color: #3fb950; font-weight: 600; }
+  .action-sell { color: #f85149; font-weight: 600; }
+  .action-lock { color: #d29922; font-weight: 600; }
+  .action-settle { color: #a371f7; font-weight: 600; }
+  .mode-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; background: #21262d; color: #8b949e; }
+  .mode-sell { color: #f85149; }
+  .mode-lock { color: #d29922; }
+  .mode-hybrid { color: #a371f7; }
+  .rank-1 td { background: #3fb95010; }
+  .experiment-meta { font-size: 12px; color: #8b949e; margin-top: 4px; }
+  .empty { text-align: center; padding: 20px; color: #484f58; }
+  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  .toolbar select, .toolbar input { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; padding: 6px 10px; border-radius: 6px; font-size: 12px; }
+  .refresh-bar { text-align: right; font-size: 11px; color: #484f58; margin-bottom: 8px; }
+  code { font-size: 11px; word-break: break-all; }
+  .title-cell { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+  .badge-ok { background: #1f6feb33; color: #3fb950; border: 1px solid #3fb95044; }
+  .badge-warn { background: #f8514933; color: #f85149; border: 1px solid #f8514944; }
+  .detail { font-size: 11px; color: #8b949e; }
+  .nav { margin-top: 8px; display: flex; gap: 10px; font-size: 12px; }
+  .nav a { color: #58a6ff; text-decoration: none; }
+  .nav a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>Swing Exit Experiment</h1>
+      <div style="display:flex; align-items:center; gap:10px; margin-top:4px;">
+        <select id="run-selector" style="background:#161b22; border:1px solid #30363d; color:#c9d1d9; padding:4px 8px; border-radius:6px; font-size:12px;">
+          <option value="current">Loading runs...</option>
+        </select>
+        <span class="experiment-meta" id="experiment-meta">Run: --</span>
+      </div>
+      <div class="nav">
+        <a href="/">Overview</a>
+        <a href="/strategies">Strategies</a>
+        <a href="/trades">Trades Explorer</a>
+      </div>
+    </div>
+    <div class="uptime">
+      <div id="uptime">--</div>
+      <div id="integrity-badge" class="badge badge-warn" style="margin-top:6px;">Integrity: unknown</div>
+    </div>
+  </header>
+
+  <div class="callout" id="pnl-callout">
+    <strong>One shared wallet</strong> runs 9 strategies in parallel. Each strategy tracks its own virtual book.
+    <strong>Portfolio P&L</strong> = equity − initial balance (what you actually have).
+    Per-strategy realized P&L only counts that strategy’s closed trades — open positions across all books can still be underwater.
+  </div>
+
+  <div class="cards" id="wallet-cards">
+    <div class="card highlight"><div class="label">Portfolio P&L</div><div class="value" id="portfolio-pl">--</div><div class="sub">Equity − initial</div></div>
+    <div class="card"><div class="label">Equity</div><div class="value neutral" id="equity">--</div><div class="sub" id="equity-sub"></div></div>
+    <div class="card"><div class="label">Cash balance</div><div class="value neutral" id="balance">--</div><div class="sub" id="balance-sub"></div></div>
+    <div class="card"><div class="label">Wallet realized</div><div class="value" id="wallet-realized">--</div><div class="sub" id="wallet-realized-sub">Closed trades (cash)</div></div>
+    <div class="card"><div class="label">Unrealized</div><div class="value" id="unrealized-pl">--</div><div class="sub" id="unrealized-sub"></div></div>
+    <div class="card"><div class="label">Virtual realized Σ</div><div class="value muted" id="virtual-realized">--</div><div class="sub">Sum of strategy books</div></div>
+  </div>
+
+  <h2>Reconciliation <span class="hint">wallet + marks consistency</span></h2>
+  <table>
+    <thead><tr>
+      <th>Portfolio net</th><th>Expected (wallet realized + unrealized)</th><th>Delta</th><th>Marked</th><th>Unmarked</th><th>Unmarked cost basis</th>
+    </tr></thead>
+    <tbody id="recon-body"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody>
+  </table>
+
+  <h2>Integrity details <span class="hint">resolution and payout anomalies</span></h2>
+  <table>
+    <thead><tr>
+      <th>Settlement mismatches</th><th>Payout mismatches</th><th>Suspicious exits</th><th>Conservative haircut</th><th>Top flagged tickers</th>
+    </tr></thead>
+    <tbody id="integrity-body"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
+  </table>
+
+  <h2>Strategy leaderboard <span class="hint">virtual P&L per book — compare exit rules</span></h2>
+  <table>
+    <thead><tr>
+      <th>#</th><th>Strategy</th><th>Mode</th><th>Realized</th><th>ROI</th><th>$/Entry</th><th>Sell</th><th>Lock</th><th>Settle</th><th>Open</th><th>W/L</th>
+    </tr></thead>
+    <tbody id="leaderboard-body"><tr><td colspan="11" class="empty">Loading...</td></tr></tbody>
+  </table>
+
+  <h2>Open positions <span class="hint" id="positions-count"></span></h2>
+  <table>
+    <thead><tr>
+      <th>Strategy</th><th>Title</th><th>Team selected</th><th>Sport</th><th>Side</th><th>Entry</th><th>Now</th><th>Qty</th><th>Cost</th><th>Unreal.</th><th>Mark src</th><th>Hold</th><th>Ticker</th>
+    </tr></thead>
+    <tbody id="positions-body"><tr><td colspan="13" class="empty">No open positions</td></tr></tbody>
+  </table>
+
+  <h2>All trades <span class="hint">filter by strategy</span></h2>
+  <div class="toolbar">
+    <label>Strategy <select id="trade-filter"><option value="">All</option></select></label>
+    <label>Action <select id="action-filter">
+      <option value="">All</option>
+      <option value="buy">Buy</option>
+      <option value="sell">Sell</option>
+      <option value="lock">Lock</option>
+      <option value="settle">Settle</option>
+    </select></label>
+    <span class="muted" id="trade-count"></span>
+  </div>
+  <div class="refresh-bar" id="refresh-bar">Auto-refresh: 30s</div>
+  <table>
+    <thead><tr>
+      <th>Time</th><th>Strategy</th><th>Action</th><th>Title</th><th>Team selected</th><th>Side</th><th>Entry</th><th>Exit</th><th>Qty</th><th>P&L</th><th>Exit reason</th><th>Trigger</th><th>Hold</th><th>Ticker</th>
+    </tr></thead>
+    <tbody id="trades-body"><tr><td colspan="14" class="empty">No trades yet</td></tr></tbody>
+  </table>
+
+  <h2>Wallet log <span class="hint">actual cash movements</span></h2>
+  <table>
+    <thead><tr>
+      <th>Time</th><th>Strategy</th><th>Action</th><th>Title</th><th>Price</th><th>Qty</th><th>Cost</th><th>P&L</th><th>Balance</th><th>Exit reason</th>
+    </tr></thead>
+    <tbody id="wallet-body"><tr><td colspan="10" class="empty">No wallet trades</td></tr></tbody>
+  </table>
+</div>
+
+<script>
+let lastData = null;
+let selectedRunId = 'current';
+let autoRefreshTimer = null;
+
+function fmt$(v) { return v >= 0 ? `$${v.toFixed(2)}` : `-$${Math.abs(v).toFixed(2)}`; }
+function fmtSigned(v) { return (v >= 0 ? '+' : '') + fmt$(v); }
+function plClass(v) { return v > 0 ? 'positive' : v < 0 ? 'negative' : 'neutral'; }
+function hasNum(v) { return typeof v === 'number' && !Number.isNaN(v); }
+function fmtTime(secs) {
+  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m`;
+  return `${Math.floor(secs)}s`;
+}
+function sportBadge(sport) {
+  if (!sport) return '';
+  return `<span class="sport-badge sport-${sport.toLowerCase()}">${sport}</span>`;
+}
+function setPlEl(id, value) {
+  const el = document.getElementById(id);
+  if (!hasNum(value)) {
+    el.textContent = 'N/A';
+    el.className = 'value muted';
+    return;
+  }
+  el.textContent = fmtSigned(value);
+  el.className = 'value ' + plClass(value);
+}
+function modeBadge(mode) {
+  if (!mode) return '';
+  return `<span class="mode-badge mode-${mode}">${mode}</span>`;
+}
+
+async function loadRuns() {
+  try {
+    const resp = await fetch('/api/runs');
+    const d = await resp.json();
+    const sel = document.getElementById('run-selector');
+    const runs = d.runs || [];
+    const currentId = d.current_run_id;
+    sel.innerHTML = '';
+    const currentRun = runs.find(r => r.run_id === currentId);
+    const currentLabel = currentRun ? currentRun.label : 'Current';
+    sel.innerHTML += `<option value="current">${currentLabel} (live)</option>`;
+    runs.filter(r => r.status === 'archived').forEach(r => {
+      sel.innerHTML += `<option value="${r.run_id}">${r.label} (archived)</option>`;
+    });
+    sel.value = selectedRunId;
+  } catch (e) {}
+}
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  autoRefreshTimer = setInterval(refresh, 30000);
+}
+function stopAutoRefresh() {
+  if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+}
+
+document.getElementById('run-selector').addEventListener('change', function() {
+  selectedRunId = this.value;
+  if (selectedRunId === 'current') {
+    startAutoRefresh();
+  } else {
+    stopAutoRefresh();
+  }
+  refresh();
+});
+
+function strategyRow(s, rank) {
+  const rankCls = rank === 1 ? ' class="rank-1"' : '';
+  const wl = s.exits > 0 ? `${s.wins}/${s.losses}` : '—';
+  return `<tr${rankCls}>
+    <td>${rank}</td>
+    <td><strong>${s.name}</strong></td>
+    <td>${modeBadge(s.exit_mode)}</td>
+    <td class="${plClass(s.realized_pl)}">${fmtSigned(s.realized_pl)}</td>
+    <td class="${plClass(s.roi)}">${s.roi >= 0 ? '+' : ''}${s.roi.toFixed(1)}%</td>
+    <td class="${plClass(s.profit_per_entry)}">${fmtSigned(s.profit_per_entry || 0)}</td>
+    <td>${s.sell_exits ?? 0}</td>
+    <td>${s.lock_exits ?? 0}</td>
+    <td>${s.settle_exits ?? 0}</td>
+    <td>${s.open_positions}</td>
+    <td>${wl}</td>
+  </tr>`;
+}
+
+function renderTrades() {
+  if (!lastData) return;
+  const strat = document.getElementById('trade-filter').value;
+  const act = document.getElementById('action-filter').value;
+  let rows = lastData.all_trades || [];
+  if (strat) rows = rows.filter(t => t.strategy === strat);
+  if (act) rows = rows.filter(t => t.action === act);
+
+  document.getElementById('trade-count').textContent = `${rows.length} trades shown`;
+
+  const tb = document.getElementById('trades-body');
+  if (rows.length === 0) {
+    tb.innerHTML = '<tr><td colspan="14" class="empty">No trades match filter</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.map(t => {
+    const ts = new Date((t.timestamp || 0) * 1000).toLocaleString();
+    const entry = t.entry_price != null ? '$' + t.entry_price.toFixed(2) : '—';
+    const exitPx = t.exit_price != null ? '$' + t.exit_price.toFixed(2)
+      : t.lock_price != null ? '$' + t.lock_price.toFixed(2) : '—';
+    const pl = t.profit != null ? fmtSigned(t.profit) : '—';
+    const hold = t.hold_time_seconds != null ? fmtTime(t.hold_time_seconds) : '—';
+    return `<tr>
+      <td>${ts}</td>
+      <td>${t.strategy || '—'}</td>
+      <td class="action-${t.action}">${(t.action || '').toUpperCase()}</td>
+      <td class="title-cell" title="${(t.title || '').replace(/"/g, '')}">${(t.title || '').slice(0, 40)}</td>
+      <td>${t.selected_team || '—'}</td>
+      <td>${(t.selected_side || t.side || '—').toUpperCase()}</td>
+      <td>${entry}</td>
+      <td>${exitPx}</td>
+      <td>${t.count ?? '—'}</td>
+      <td class="${t.profit != null ? plClass(t.profit) : ''}">${pl}</td>
+      <td>${t.exit_reason || '—'}</td>
+      <td>${t.trigger || '—'}</td>
+      <td>${hold}</td>
+      <td><code>${(t.ticker || '').slice(0, 24)}</code></td>
+    </tr>`;
+  }).join('');
+}
+
+function populateFilters(d) {
+  const sel = document.getElementById('trade-filter');
+  const cur = sel.value;
+  const names = [...new Set((d.strategies || []).map(s => s.name))].sort();
+  sel.innerHTML = '<option value="">All</option>' +
+    names.map(n => `<option value="${n}">${n}</option>`).join('');
+  if (names.includes(cur)) sel.value = cur;
+}
+
+async function refresh() {
+  try {
+    const url = selectedRunId === 'current' ? '/api/status' : `/api/runs/${selectedRunId}/status`;
+    const resp = await fetch(url);
+    const d = await resp.json();
+    lastData = d;
+
+    const isArchived = selectedRunId !== 'current';
+    const runLabel = d.run_label || d.simulation_run_id || '--';
+    document.getElementById('experiment-meta').textContent = d.simulation_run_id
+      ? `${runLabel} · ${d.experiment_started_at || ''} · ${d.experiment_status || 'running'}`
+      : 'No manifest';
+
+    if (isArchived) {
+      document.getElementById('uptime').textContent = 'Archived run (static)';
+    } else {
+      document.getElementById('uptime').textContent = `Uptime ${fmtTime(d.uptime_seconds)} · ${d.markets_cached || 0} markets`;
+    }
+
+    const initBal = d.initial_balance || 10000;
+    const walletLabel = `$${(initBal/1000).toFixed(initBal >= 1000 ? 0 : 1)}k`;
+    if (d.pnl_explanation) {
+      document.getElementById('pnl-callout').innerHTML =
+        `<strong>One shared ${walletLabel} wallet</strong> runs 9 strategies in parallel. ` + d.pnl_explanation;
+    }
+
+    setPlEl('portfolio-pl', d.portfolio_net_pl);
+    document.getElementById('balance').textContent = hasNum(d.balance) ? fmt$(d.balance) : 'N/A';
+    document.getElementById('balance-sub').textContent =
+      hasNum(d.open_cost_basis) && hasNum(d.initial_balance)
+        ? `Deployed in open ~${fmt$(d.open_cost_basis)} · Cash left from $${d.initial_balance.toFixed(0)}`
+        : 'Open cost basis unavailable';
+    document.getElementById('equity').textContent = hasNum(d.equity) ? fmt$(d.equity) : 'N/A';
+    document.getElementById('equity-sub').textContent =
+      hasNum(d.balance) && hasNum(d.open_market_value)
+        ? `Cash ${fmt$(d.balance)} + open mkt ${fmt$(d.open_market_value)}`
+        : 'Equity breakdown unavailable';
+    setPlEl('wallet-realized', d.wallet_realized_pl);
+    const wrSub = document.getElementById('wallet-realized-sub');
+    if (hasNum(d.raw_wallet_realized_pl) && hasNum(d.wallet_realized_pl) && d.raw_wallet_realized_pl !== d.wallet_realized_pl) {
+      wrSub.textContent = `Conservative haircut ${fmtSigned(d.wallet_realized_pl - d.raw_wallet_realized_pl)} (raw ${fmtSigned(d.raw_wallet_realized_pl)})`;
+    } else {
+      wrSub.textContent = 'Closed trades (cash)';
+    }
+    setPlEl('unrealized-pl', d.unrealized_pl);
+    document.getElementById('unrealized-sub').textContent =
+      `${(d.open_positions || []).length} legs across strategies`;
+    const vr = d.virtual_realized_sum;
+    const vEl = document.getElementById('virtual-realized');
+    vEl.textContent = hasNum(vr) ? fmtSigned(vr) : 'N/A';
+    vEl.className = 'value muted';
+
+    const recon = d.reconciliation || {};
+    const integrity = document.getElementById('integrity-badge');
+    if (recon.ok === true) {
+      integrity.className = 'badge badge-ok';
+      integrity.textContent = 'Integrity: OK';
+    } else {
+      integrity.className = 'badge badge-warn';
+      integrity.textContent = 'Integrity: Warning';
+    }
+    if ((d.suspicious_positive_profit || 0) > 0) {
+      integrity.className = 'badge badge-warn';
+      integrity.textContent = `Integrity: Conservative (-${fmt$(d.suspicious_positive_profit)})`;
+    }
+    const rb = document.getElementById('recon-body');
+    rb.innerHTML = `<tr>
+      <td>${hasNum(recon.portfolio_net_pl) ? fmtSigned(recon.portfolio_net_pl) : 'N/A'}</td>
+      <td>${hasNum(recon.expected_net_pl) ? fmtSigned(recon.expected_net_pl) : 'N/A'}</td>
+      <td class="${hasNum(recon.reconciliation_delta) ? plClass(recon.reconciliation_delta) : ''}">${hasNum(recon.reconciliation_delta) ? fmtSigned(recon.reconciliation_delta) : 'N/A'}</td>
+      <td>${recon.marked_positions ?? 'N/A'}</td>
+      <td>${recon.unmarked_positions ?? 'N/A'}</td>
+      <td>${hasNum(recon.unmarked_cost_basis) ? fmt$(recon.unmarked_cost_basis) : 'N/A'}</td>
+    </tr>`;
+    const ib = document.getElementById('integrity-body');
+    const flagged = [
+      ...(recon.suspicious_exits || []).slice(0, 3).map(x => x.ticker),
+      ...(recon.settlement_mismatches || []).slice(0, 2).map(x => x.ticker),
+      ...(recon.settle_payout_mismatches || []).slice(0, 2).map(x => x.ticker),
+    ];
+    ib.innerHTML = `<tr>
+      <td>${(recon.settlement_mismatches || []).length}</td>
+      <td>${(recon.settle_payout_mismatches || []).length}</td>
+      <td>${(recon.suspicious_exits || []).length}</td>
+      <td>${hasNum(d.suspicious_positive_profit) ? fmt$(d.suspicious_positive_profit) : 'N/A'}</td>
+      <td>${flagged.length ? flagged.join(', ') : '—'}</td>
+    </tr>`;
+
+    const ranked = d.strategy_leaderboard || d.strategies || [];
+    const lb = document.getElementById('leaderboard-body');
+    lb.innerHTML = ranked.length
+      ? ranked.map((s, i) => strategyRow(s, i + 1)).join('')
+      : '<tr><td colspan="11" class="empty">No strategies</td></tr>';
+
+    const positions = d.open_positions || [];
+    document.getElementById('positions-count').textContent =
+      positions.length ? `(${positions.length} legs)` : '';
+    const pb = document.getElementById('positions-body');
+    if (!positions.length) {
+      pb.innerHTML = '<tr><td colspan="13" class="empty">No open positions</td></tr>';
+    } else {
+      pb.innerHTML = positions.map(p => {
+        const cost = (p.entry_price * p.count).toFixed(2);
+        return `<tr>
+          <td>${p.strategy}</td>
+          <td class="title-cell" title="${(p.title || '').replace(/"/g, '')}">${(p.title || '').slice(0, 36)}</td>
+          <td>${p.selected_team || '—'}</td>
+          <td>${sportBadge(p.sport)}</td>
+          <td>${(p.selected_side || p.side || '').toUpperCase()}</td>
+          <td>$${p.entry_price.toFixed(2)}</td>
+          <td>${p.current_price != null ? '$' + p.current_price.toFixed(2) : '—'}</td>
+          <td>${p.count}</td>
+          <td>$${cost}</td>
+          <td class="${plClass(p.unrealized_pl)}">${p.unrealized_pl != null ? fmtSigned(p.unrealized_pl) : '—'}</td>
+          <td class="detail">${p.mark_source || 'missing'}</td>
+          <td>${fmtTime(p.hold_seconds)}</td>
+          <td><code>${p.ticker}</code></td>
+        </tr>`;
+      }).join('');
+    }
+
+    populateFilters(d);
+    renderTrades();
+
+    const wallet = (d.recent_trades || []).slice().reverse();
+    const wb = document.getElementById('wallet-body');
+    if (!wallet.length) {
+      wb.innerHTML = '<tr><td colspan="10" class="empty">No wallet trades</td></tr>';
+    } else {
+      wb.innerHTML = wallet.map(t => {
+        const ts = new Date(t.timestamp * 1000).toLocaleString();
+        const pl = t.profit != null ? fmtSigned(t.profit) : '—';
+        return `<tr>
+          <td>${ts}</td>
+          <td>${t.strategy || '—'}</td>
+          <td class="action-${t.action}">${t.action.toUpperCase()}</td>
+          <td class="title-cell">${(t.title || '').slice(0, 36)}</td>
+          <td>$${t.price.toFixed(2)}</td>
+          <td>${t.count}</td>
+          <td>${t.cost != null ? fmt$(t.cost) : '—'}</td>
+          <td class="${t.profit != null ? plClass(t.profit) : ''}">${pl}</td>
+          <td>$${t.balance_after.toFixed(2)}</td>
+          <td>${t.exit_reason || '—'}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    document.getElementById('refresh-bar').textContent = isArchived
+      ? `Archived run · loaded ${new Date().toLocaleTimeString()}`
+      : `Last updated ${new Date().toLocaleTimeString()} · auto 30s`;
+  } catch (e) {
+    document.getElementById('refresh-bar').textContent = `Error: ${e.message}`;
+  }
+}
+
+document.getElementById('trade-filter').addEventListener('change', renderTrades);
+document.getElementById('action-filter').addEventListener('change', renderTrades);
+loadRuns();
+refresh();
+startAutoRefresh();
+</script>
+</body>
+</html>

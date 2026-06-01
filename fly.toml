@@ -1,0 +1,53 @@
+# Fly.io — paper trading worker + public dashboard
+# App: https://kalshi-trader-crimson-darkness-7593.fly.dev/
+#
+# First-time setup:
+#   fly volumes create trade_data --region sjc --size 1
+#   fly secrets set TELEGRAM_BOT_TOKEN=xxx TELEGRAM_CHAT_ID=xxx
+#   fly deploy
+
+app = 'kalshi-trader-crimson-darkness-7593'
+primary_region = 'sjc'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  DATA_DIR = '/data'
+  PLAIN_LOGS = 'true'
+  EXECUTOR_URL = 'http://127.0.0.1:8100'
+  TEST_DURATION = '0'
+  PAPER_BALANCE = '20000'
+  MAX_RISK_PER_TRADE = '50'
+  MAX_TOTAL_RISK = '100000'
+  PROFIT_SCALE = '2.0'
+  # Set to '1' once to archive everything and reset wallet to PAPER_BALANCE
+  FRESH_EXPERIMENT = '0'
+  EXIT_SCAN_INTERVAL = '30'
+
+[mounts]
+  source = 'trade_data'
+  destination = '/data'
+
+[processes]
+  worker = 'python run_server.py'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['worker']
+
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '10s'
+    grace_period = '60s'
+    method = 'GET'
+    path = '/health'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '1024mb'
+  cpus = 1

@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.env
+.env.*
+!.env.example
+*.pem
+positions*.json
+positions/
+results/
+.cursor/
+agent-tools/
+*.plan.md

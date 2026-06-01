@@ -1,0 +1,13 @@
+__pycache__
+*.pyc
+.env
+.env.*
+*.pem
+positions*.json
+positions/
+results/
+.git
+.venv
+.cursor
+agent-tools
+*.plan.md
