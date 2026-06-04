@@ -127,6 +127,13 @@ class VirtualTrader:
         self._ignore_global_risk_cap = config.get("ignore_global_risk_cap", False)
         self._use_run_exits = config.get("use_run_exits", True)
         self._exit_mode = config.get("exit_mode", "hybrid")
+
+        # ML entry gate (Run 4). When enabled, skip candidates whose predicted
+        # P(profitable swing) is below model_min_prob. See ml/predict.py.
+        self._use_model_gate = config.get("use_model_gate", False)
+        self._model_min_prob = config.get("model_min_prob", 0.0)
+        self._model_path = config.get("model_path")
+        self._model_skips = 0
         self._trade_lock = asyncio.Lock()
         self._closing_tickers: set[str] = set()
 
@@ -255,6 +262,28 @@ class VirtualTrader:
             if hours_to_resolve <= 0 or hours_to_resolve > MAX_HOURS_TO_RESOLUTION:
                 continue
 
+            model_prob = None
+            if self._use_model_gate:
+                try:
+                    from ml.predict import score as _model_score
+                    # predict_proba is CPU-bound and blocks the event loop;
+                    # run it in a thread so the dashboard/health server stays
+                    # responsive during scans.
+                    model_prob = await asyncio.to_thread(
+                        _model_score, market, self._config, self._model_path
+                    )
+                except Exception as exc:
+                    self._file_logger.warning(f"model gate scoring failed: {exc}")
+                    model_prob = None
+                if model_prob is not None and model_prob < self._model_min_prob:
+                    self._model_skips += 1
+                    self._log_event("ENTRY_SKIPPED_MODEL", {
+                        "ticker": market.ticker,
+                        "model_prob": round(model_prob, 4),
+                        "model_min_prob": self._model_min_prob,
+                    })
+                    continue
+
             candidates_found += 1
 
             if not self._enter_all_markets:
@@ -290,11 +319,14 @@ class VirtualTrader:
                 ).isoformat(),
                 "suggested_count": count,
                 "suggested_risk": round(market.yes_ask * count, 2),
+                "model_prob": round(model_prob, 4) if model_prob is not None else None,
                 "config": {
                     "underdog_max_price": self._underdog_max,
                     "max_risk": self._max_risk,
                     "min_volume": min_volume,
                     "max_hours_to_resolution": MAX_HOURS_TO_RESOLUTION,
+                    "use_model_gate": self._use_model_gate,
+                    "model_min_prob": self._model_min_prob,
                 },
             })
 
@@ -316,6 +348,11 @@ class VirtualTrader:
                     count=result.count,
                     sport=market.sport or "",
                 ))
+                now_ts = time.time()
+                hours_to_resolve = (
+                    (market.resolves_at - now_ts) / 3600
+                    if market.resolves_at else None
+                )
                 trade = {
                     "action": "buy",
                     "ticker": result.ticker,
@@ -325,7 +362,23 @@ class VirtualTrader:
                     "price": result.price,
                     "count": result.count,
                     "cost": round(result.price * result.count, 2),
-                    "timestamp": time.time(),
+                    "timestamp": now_ts,
+                    # Entry-time market state, persisted for later entry-quality
+                    # analysis (are we overpaying into wide/thin markets or
+                    # entering near-decided games?). Live score/clock is not on
+                    # this code path -- it would need the team-keyed score feed
+                    # bridged to the market ticker (tracked as a follow-up).
+                    "entry_yes_ask": round(market.yes_ask, 4),
+                    "entry_no_ask": round(market.no_ask, 4),
+                    "entry_yes_bid": round(market.yes_bid, 4),
+                    "entry_no_bid": round(market.no_bid, 4),
+                    "entry_spread": round(market.yes_ask - market.yes_bid, 4),
+                    "entry_market_width": round(market.yes_ask + market.no_ask - 1.0, 4),
+                    "entry_volume": float(market.volume or 0.0),
+                    "resolves_at": market.resolves_at,
+                    "hours_to_resolution": (
+                        round(hours_to_resolve, 3) if hours_to_resolve is not None else None
+                    ),
                 }
                 trade.update(self._side_context(market.title, result.ticker, "yes"))
                 self._trades.append(trade)
@@ -370,10 +423,11 @@ class VirtualTrader:
             sell_profit = compute_sell_profit(position, current_yes_bid)
             lock_profit = compute_lock_profit(position, current_no)
             cost = entry_cost(position)
+            max_gain = (1.0 - position.entry_price) * position.count
             hold_seconds = time.time() - position.timestamp
 
             action, exit_reason = choose_exit(
-                self._config, sell_profit, lock_profit, cost,
+                self._config, sell_profit, lock_profit, cost, max_gain=max_gain,
             )
 
             self._log_event("EXIT_EVALUATION", {
@@ -605,8 +659,9 @@ class VirtualTrader:
         })
 
         cost = entry_cost(position)
+        max_gain = (1.0 - position.entry_price) * position.count
         action, exit_reason = choose_exit(
-            self._config, sell_profit, lock_profit, cost,
+            self._config, sell_profit, lock_profit, cost, max_gain=max_gain,
         )
         if not action:
             self._log_event("EXIT_SKIP_UNPROFITABLE", {

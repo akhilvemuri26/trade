@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from types import SimpleNamespace
-import pytest
+import asyncio
 import sys
 import types
 
@@ -75,8 +75,12 @@ def test_rebuild_strategy_trades_from_ledger(tmp_path, monkeypatch):
     assert trader._trades[-1]["action"] == "sell"
 
 
-@pytest.mark.asyncio
-async def test_resolution_integrity_detects_settle_payout_mismatch(monkeypatch):
+class _FakeKalshiYes:
+    async def get_market_raw(self, ticker):
+        return {"status": "finalized", "result": "yes", "ticker": ticker}
+
+
+def test_resolution_integrity_detects_settle_payout_mismatch(monkeypatch):
     rows = [{
         "strategy": "s1",
         "action": "settle",
@@ -89,10 +93,45 @@ async def test_resolution_integrity_detects_settle_payout_mismatch(monkeypatch):
         "profit": 1.0,  # wrong, should be 6.0
     }]
     monkeypatch.setattr("run_server.load_ledger_trades", lambda limit: rows)
-
-    class FakeKalshi:
-        async def get_market_raw(self, ticker):
-            return {"status": "finalized", "result": "yes", "ticker": ticker}
-
-    out = await _resolution_integrity(FakeKalshi(), limit=50)
+    out = asyncio.run(_resolution_integrity(_FakeKalshiYes(), limit=50))
     assert len(out["settle_payout_mismatches"]) == 1
+
+
+def test_lock_not_suspicious_when_resolved_opposite_hedge(monkeypatch):
+    # A lock hedges to a guaranteed payout, so the game resolving on the side
+    # opposite the hedge is EXPECTED. Regression test for the old side != result
+    # heuristic that false-flagged every won game as suspicious (108 of them in
+    # run 4, wrongly deducting $1,951 from the conservative P&L).
+    rows = [{
+        "strategy": "swing_lock_15usd",
+        "action": "lock",
+        "ticker": "KXMLBGAME-T",
+        "side": "no",
+        "count": 100,
+        "entry_price": 0.30,
+        "lock_price": 0.55,
+        "profit": 15.0,  # exactly (1 - 0.30 - 0.55) * 100
+    }]
+    monkeypatch.setattr("run_server.load_ledger_trades", lambda limit: rows)
+    out = asyncio.run(_resolution_integrity(_FakeKalshiYes(), limit=50))
+    assert out["suspicious_exits"] == []
+    assert out["suspicious_positive_profit"] == 0.0
+    assert out["lock_profit_mismatches"] == []
+
+
+def test_lock_flagged_when_profit_exceeds_locked(monkeypatch):
+    # The real failure mode for a lock: booking more than the hedge guarantees.
+    rows = [{
+        "strategy": "swing_lock_15usd",
+        "action": "lock",
+        "ticker": "KXMLBGAME-T",
+        "side": "no",
+        "count": 100,
+        "entry_price": 0.30,
+        "lock_price": 0.55,
+        "profit": 40.0,  # booked $40 but the lock only guarantees $15
+    }]
+    monkeypatch.setattr("run_server.load_ledger_trades", lambda limit: rows)
+    out = asyncio.run(_resolution_integrity(_FakeKalshiYes(), limit=50))
+    assert len(out["lock_profit_mismatches"]) == 1
+    assert out["lock_profit_mismatches"][0]["delta"] == 25.0

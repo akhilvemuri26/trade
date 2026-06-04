@@ -92,6 +92,10 @@ async def run_entry_scanner(kalshi: KalshiClient, traders: list[VirtualTrader], 
             markets = await kalshi.get_sports_markets()
             for trader in traders:
                 await trader.check_entries(markets, all_traders=traders)
+            from market_view import write_snapshot
+            # Scores every market under every gated strategy (CPU-bound);
+            # offload so it doesn't block the event loop / health checks.
+            await asyncio.to_thread(write_snapshot, markets)
         except Exception as e:
             logger.error("Entry scan error: %s", e)
         await asyncio.sleep(poll_interval)

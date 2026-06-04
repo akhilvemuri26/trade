@@ -232,11 +232,12 @@ def _build_reconciliation(pnl: dict, positions: list[dict]) -> dict:
 async def _resolution_integrity(kalshi: KalshiClient, limit: int = 400) -> dict:
     unresolved_mismatches = []
     settle_payout_mismatches = []
+    lock_profit_mismatches = []
     suspicious_exits = []
-    checked = set()
     recent_rows = load_ledger_trades(limit)
     for row in recent_rows:
-        if row.get("action") == "settle":
+        action = row.get("action")
+        if action == "settle":
             side = row.get("side")
             result = row.get("result")
             if side in ("yes", "no") and result in ("yes", "no") and side != result:
@@ -265,56 +266,67 @@ async def _resolution_integrity(kalshi: KalshiClient, limit: int = 400) -> dict:
                     "recorded_profit": round(profit, 2),
                     "delta": round(expected - profit, 2),
                 })
+        elif action == "lock":
+            # A lock buys the opposite side to hedge, earning a guaranteed
+            # $1/contract payout REGARDLESS of which side resolves. So the
+            # resolved side is irrelevant -- comparing it to the hedge side
+            # (the old check) flagged every won game as "suspicious". The only
+            # thing that can be wrong is booking more than the lock guarantees:
+            #   locked profit = (1 - entry - lock_price) * count.
+            count = float(row.get("count") or 0)
+            entry_price = float(row.get("entry_price") or 0)
+            lock_price = row.get("lock_price")
+            if lock_price is None:
+                lock_price = row.get("exit_price")
+            if lock_price is None:
+                lock_price = row.get("price")
+            lock_price = float(lock_price or 0)
+            recorded = float(row.get("profit") or 0)
+            max_lock_profit = (1.0 - entry_price - lock_price) * count
+            if recorded - max_lock_profit > 0.01:
+                lock_profit_mismatches.append({
+                    "ticker": row.get("ticker"),
+                    "strategy": row.get("strategy"),
+                    "recorded_profit": round(recorded, 2),
+                    "max_lock_profit": round(max_lock_profit, 2),
+                    "delta": round(recorded - max_lock_profit, 2),
+                })
 
-    recent_closed = [r for r in recent_rows if r.get("action") in ("sell", "lock")]
+    # Outright YES sells: flag a sell near $1 that resolved the other way (booked
+    # a near-certain win that didn't happen). Locks are excluded -- their payoff
+    # does not depend on the resolved side (validated arithmetically above).
+    recent_sells = [r for r in recent_rows if r.get("action") == "sell"]
     resolution_cache: dict[str, Optional[SettlementInfo]] = {}
-    for row in recent_closed:
+    for row in recent_sells:
         ticker = row.get("ticker")
-        if not ticker:
-            continue
-        if ticker not in resolution_cache:
+        if ticker and ticker not in resolution_cache:
             raw = await kalshi.get_market_raw(ticker)
             resolution_cache[ticker] = parse_settlement(raw) if raw else None
-    for row in recent_closed:
+    for row in recent_sells:
         ticker = row.get("ticker")
-        if not ticker:
-            continue
-        info = resolution_cache.get(ticker)
+        info = resolution_cache.get(ticker) if ticker else None
         if not info:
             continue
-        action = row.get("action")
-        if action == "sell":
-            side = row.get("side", "yes")
-            px = float(row.get("exit_price") or row.get("price") or 0)
-            if px >= 0.99 and side in ("yes", "no") and side != info.result:
-                suspicious_exits.append({
-                    "ticker": ticker,
-                    "strategy": row.get("strategy"),
-                    "action": action,
-                    "exit_price": px,
-                    "side": side,
-                    "resolved_side": info.result,
-                    "resolution_source": info.resolution_source,
-                    "profit": round(float(row.get("profit") or 0), 2),
-                })
-        elif action == "lock":
-            side = row.get("side", "no")
-            if side in ("yes", "no") and side != info.result:
-                suspicious_exits.append({
-                    "ticker": ticker,
-                    "strategy": row.get("strategy"),
-                    "action": action,
-                    "side": side,
-                    "resolved_side": info.result,
-                    "resolution_source": info.resolution_source,
-                    "profit": round(float(row.get("profit") or 0), 2),
-                })
+        side = row.get("side", "yes")
+        px = float(row.get("exit_price") or row.get("price") or 0)
+        if px >= 0.99 and side in ("yes", "no") and side != info.result:
+            suspicious_exits.append({
+                "ticker": ticker,
+                "strategy": row.get("strategy"),
+                "action": "sell",
+                "exit_price": px,
+                "side": side,
+                "resolved_side": info.result,
+                "resolution_source": info.resolution_source,
+                "profit": round(float(row.get("profit") or 0), 2),
+            })
     suspicious_positive_profit = round(
         sum(max(0.0, float(x.get("profit") or 0.0)) for x in suspicious_exits), 2,
     )
     return {
         "settlement_mismatches": unresolved_mismatches,
         "settle_payout_mismatches": settle_payout_mismatches,
+        "lock_profit_mismatches": lock_profit_mismatches,
         "suspicious_exits": suspicious_exits,
         "suspicious_positive_profit": suspicious_positive_profit,
     }
@@ -601,7 +613,16 @@ async def run_dashboard_server(
             )
             for x in integrity.get("settle_payout_mismatches", [])
         )
+        lock_flagged = set(
+            (
+                x.get("ticker"),
+                x.get("strategy"),
+                "lock",
+            )
+            for x in integrity.get("lock_profit_mismatches", [])
+        )
         flagged |= payout_flagged
+        flagged |= lock_flagged
         for r in rows:
             r["anomaly_flag"] = (r.get("ticker"), r.get("strategy"), r.get("action")) in flagged
         filtered = _apply_trade_filters_and_sort(rows, req.query)
@@ -798,12 +819,17 @@ async def run_dashboard_server(
     async def handle_health(req):
         return web.json_response({"status": "ok", "service": "dashboard"})
 
+    async def handle_api_market_scores(req):
+        from market_view import read_snapshot
+        return web.json_response(read_snapshot())
+
     app = web.Application()
     app.router.add_get("/", handle_index)
     app.router.add_get("/strategies", handle_strategies_page)
     app.router.add_get("/trades", handle_trades_page)
     app.router.add_get("/health", handle_health)
     app.router.add_get("/api/status", handle_api_status)
+    app.router.add_get("/api/market-scores", handle_api_market_scores)
     app.router.add_get("/api/trades", handle_api_trades)
     app.router.add_get("/api/strategies", handle_api_strategies)
     app.router.add_get("/api/reconcile", handle_api_reconcile)

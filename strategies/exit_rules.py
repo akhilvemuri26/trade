@@ -49,16 +49,73 @@ def should_lock(config: dict, lock_profit: float, cost: float) -> bool:
     return _meets_lock_threshold(config, lock_profit, cost)
 
 
+def should_stop(config: dict, sell_profit: float, cost: float) -> bool:
+    """True once the position's unrealized loss reaches the stop-loss threshold.
+
+    `sell_profit` is (yes_bid - entry) * count, so a loss is a negative value.
+    Cuts the losing tail that the swing-exit rules never close (they only ever
+    take profit, so losers otherwise ride to a near-total settlement loss).
+    """
+    if sell_profit >= 0:
+        return False
+    loss = -sell_profit
+    stop_usd = config.get("stop_loss_usd")
+    stop_pct = config.get("stop_loss_pct")
+    if stop_usd is not None and loss >= stop_usd:
+        return True
+    if stop_pct is not None and cost > 0 and loss >= cost * stop_pct:
+        return True
+    return False
+
+
+def should_take_profit(config: dict, sell_profit: float, max_gain: Optional[float]) -> bool:
+    """True once the position has captured `take_profit_frac` of the move to $1.
+
+    `max_gain` is (1 - entry) * count — the profit if the contract settled YES.
+    Unlike a %-of-cost target, this is price-independent: frac=0.8 always means
+    "80% of the way from entry to a winning settlement", so it captures most of
+    a winner without holding all the way through settlement risk.
+    """
+    frac = config.get("take_profit_frac")
+    if frac is None or max_gain is None or max_gain <= 0:
+        return False
+    return sell_profit >= frac * max_gain
+
+
 def choose_exit(
     config: dict,
     sell_profit: float,
     lock_profit: float,
     cost: float,
+    *,
+    max_gain: Optional[float] = None,
 ) -> tuple[Optional[ExitAction], str]:
     """
     Return (action, reason) or (None, "") to hold.
+
+    `max_gain` (keyword-only) is the settle-YES profit (1-entry)*count, required
+    only by the "take_profit" mode; omitting it leaves all other modes unchanged.
     """
+    # Stop-loss has top priority: it cuts the losing tail and is executed as a
+    # YES sell at the current bid (realizes the loss). Backward-compatible —
+    # only fires when a stop_loss_* key is set on the config.
+    if should_stop(config, sell_profit, cost):
+        return "sell", _stop_reason(config)
+
     mode = config.get("exit_mode", "hybrid")
+
+    # "hold": never take profit — winners ride to settlement (only the stop-loss
+    # above can close early). Avoids truncating the winning tail, which the
+    # backtest showed costs ~$14.6k across runs 2-3.
+    if mode == "hold":
+        return None, ""
+
+    # "take_profit": sell once we've captured most of the move to $1, so we keep
+    # the bulk of a winner instead of clipping it at a small fixed gain.
+    if mode == "take_profit":
+        if should_take_profit(config, sell_profit, max_gain):
+            return "sell", _take_profit_reason(config)
+        return None, ""
 
     if mode == "sell":
         if should_sell(config, sell_profit, cost):
@@ -108,3 +165,18 @@ def _lock_reason(config: dict) -> str:
     if config.get("min_lock_profit_pct") is not None:
         return f"swing_lock_{int(config['min_lock_profit_pct'] * 100)}pct"
     return "swing_lock"
+
+
+def _stop_reason(config: dict) -> str:
+    if config.get("stop_loss_usd") is not None:
+        return f"stop_loss_{config['stop_loss_usd']}usd"
+    if config.get("stop_loss_pct") is not None:
+        return f"stop_loss_{int(config['stop_loss_pct'] * 100)}pct"
+    return "stop_loss"
+
+
+def _take_profit_reason(config: dict) -> str:
+    frac = config.get("take_profit_frac")
+    if frac is not None:
+        return f"take_profit_{int(frac * 100)}pct_of_move"
+    return "take_profit"

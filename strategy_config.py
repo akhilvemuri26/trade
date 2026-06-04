@@ -1,11 +1,35 @@
-# Paper sim — underdog swing exit experiment
+# Paper sim — Run 5: exit-policy redesign (underdog moneylines)
+#
+# Why this changed from the Run 4 swing-exit grid:
+#   Backtest on runs 2-3 (true Kalshi settlement outcomes) showed the entry is
+#   ~fairly priced (underdogs won 30.6% vs 32.6% implied), but the swing-exit
+#   rule clipped 342/346 winning positions early, leaving ~$14.6k on the table,
+#   while losers rode to a full-premium loss with no stop. Same trades:
+#       actual swing-exits, no stop ........ -$24.0k
+#       hold winners to settlement ......... -$13.3k
+#       stop-loss @50% + hold winners ...... +$2.8k
+#
+# Run 5 therefore (a) stops clipping winners and (b) cuts the losing tail, and
+# runs two cohorts side by side to compare on live data:
+#   HOLD cohort:        never take profit (full winner), stop-loss cuts losers.
+#   TAKE_PROFIT cohort: sell once we've captured most of the move to $1, + stop.
+#
+# The ML entry gate is OFF for Run 5: it optimized P(profitable swing) (~win
+# rate, anti-correlated with EV here) and fed the winner-clipping. ml/ is kept
+# in place for a future EV-based relabel once an entry edge is demonstrated.
 import os
 
+# Stake frozen at the value the backtest used ($25); do not drift mid-experiment.
 _MAX_RISK = float(os.getenv("MAX_RISK_PER_TRADE", "25"))
-_PROFIT_SCALE = float(os.getenv("PROFIT_SCALE", "1.0"))
 
 MAX_TOTAL_RISK = int(os.getenv("MAX_TOTAL_RISK", "50000"))
 MAX_HOURS_TO_RESOLUTION = 24
+
+# Model gate defaults OFF for Run 5. Kept env-configurable so the model can be
+# re-enabled later (after it is relabeled to predict EV / game outcome).
+_USE_MODEL_GATE = os.getenv("USE_MODEL_GATE", "0") == "1"
+_MODEL_MIN_PROB = float(os.getenv("MODEL_MIN_PROB", "0.6"))
+_MODEL_PATH = os.getenv("MODEL_PATH") or None
 
 # Game-winner moneylines only: KXNBAGAME, KXMLBGAME, KXNHLGAME (kalshi_client).
 
@@ -19,53 +43,34 @@ _EXPERIMENT_BASE = {
     "ignore_global_risk_cap": True,
     "use_run_exits": False,
     "sports": ["nba", "mlb", "nhl"],
+    "use_model_gate": _USE_MODEL_GATE,
+    "model_min_prob": _MODEL_MIN_PROB,
+    "model_path": _MODEL_PATH,
 }
 
 
-def _sell_usd(amount):
-    return {
-        **_EXPERIMENT_BASE,
-        "name": f"swing_sell_{int(amount)}usd",
-        "exit_mode": "sell",
-        "min_sell_profit_usd": round(amount * _PROFIT_SCALE, 2),
-    }
+def _strat(name: str, **overrides) -> dict:
+    return {**_EXPERIMENT_BASE, "name": name, **overrides}
 
 
-def _sell_pct(pct):
-    return {
-        **_EXPERIMENT_BASE,
-        "name": f"swing_sell_{int(pct * 100)}pct",
-        "exit_mode": "sell",
-        "min_sell_profit_pct": pct,
-    }
+# --- HOLD cohort: capture the full winner, cut losers at a stop ---------------
+# stop_loss_pct = exit once unrealized loss reaches this fraction of cost.
+# hold_nostop is the control (pure buy-and-hold-to-settlement) to isolate the
+# stop-loss contribution.
+_HOLD = [
+    _strat("hold_nostop", exit_mode="hold"),
+    _strat("hold_stop30", exit_mode="hold", stop_loss_pct=0.30),
+    _strat("hold_stop50", exit_mode="hold", stop_loss_pct=0.50),
+    _strat("hold_stop70", exit_mode="hold", stop_loss_pct=0.70),
+]
 
+# --- TAKE_PROFIT cohort: keep most of the winner, cut losers ------------------
+# take_profit_frac = sell once we've captured this fraction of the move from
+# entry to a $1 settlement (price-independent across entry prices).
+_TAKE_PROFIT = [
+    _strat("tp60_stop50", exit_mode="take_profit", take_profit_frac=0.60, stop_loss_pct=0.50),
+    _strat("tp80_stop50", exit_mode="take_profit", take_profit_frac=0.80, stop_loss_pct=0.50),
+    _strat("tp80_stop30", exit_mode="take_profit", take_profit_frac=0.80, stop_loss_pct=0.30),
+]
 
-def _lock_pct(pct):
-    return {
-        **_EXPERIMENT_BASE,
-        "name": f"swing_lock_{int(pct * 100)}pct",
-        "exit_mode": "lock",
-        "min_lock_profit_pct": pct,
-    }
-
-
-def _lock_usd(amount):
-    return {
-        **_EXPERIMENT_BASE,
-        "name": f"swing_lock_{int(amount)}usd",
-        "exit_mode": "lock",
-        "min_lock_profit_usd": round(amount * _PROFIT_SCALE, 2),
-    }
-
-
-_SELL_USD_AMOUNTS = [1, 2, 3, 5, 7, 8, 10, 12, 15, 18, 20, 25, 30]
-_SELL_PCT_VALUES = [0.02, 0.03, 0.05, 0.07, 0.08, 0.10, 0.12, 0.15, 0.20, 0.25, 0.30]
-_LOCK_PCT_VALUES = [0.02, 0.03, 0.05, 0.07, 0.08, 0.10, 0.12, 0.15, 0.20, 0.25, 0.30]
-_LOCK_USD_AMOUNTS = [1, 2, 3, 5, 7, 8, 10, 12, 15, 18, 20, 25, 30]
-
-STRATEGIES = (
-    [_sell_usd(a) for a in _SELL_USD_AMOUNTS]
-    + [_sell_pct(p) for p in _SELL_PCT_VALUES]
-    + [_lock_pct(p) for p in _LOCK_PCT_VALUES]
-    + [_lock_usd(a) for a in _LOCK_USD_AMOUNTS]
-)
+STRATEGIES = _HOLD + _TAKE_PROFIT

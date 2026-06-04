@@ -18,12 +18,22 @@ primary_region = 'sjc'
   EXECUTOR_URL = 'http://127.0.0.1:8100'
   TEST_DURATION = '0'
   PAPER_BALANCE = '20000'
-  MAX_RISK_PER_TRADE = '50'
+  # Run 5: stake frozen at the backtested $25 (was $50 in Run 4 — never drift
+  # the stake from what was backtested).
+  MAX_RISK_PER_TRADE = '25'
   MAX_TOTAL_RISK = '100000'
-  PROFIT_SCALE = '2.0'
-  # Set to '1' once to archive everything and reset wallet to PAPER_BALANCE
+  # Run 5 exit modes (hold / take_profit) use fraction/percent thresholds, not
+  # the USD swing thresholds PROFIT_SCALE scaled, so this is effectively unused.
+  PROFIT_SCALE = '1.0'
+  # Set to '1' once to archive everything and reset wallet to PAPER_BALANCE.
+  # Run 5 launch: flip to '1' for the first deploy (archives Run 4, starts
+  # Run 5), then back to '0' and redeploy so restarts resume instead of resetting.
   FRESH_EXPERIMENT = '0'
   EXIT_SCAN_INTERVAL = '30'
+  # Run 5: ML entry gate OFF (it optimized win-rate, not EV, and fed the
+  # winner-clipping). Re-enable only after the model is relabeled to predict EV.
+  USE_MODEL_GATE = '0'
+  MODEL_MIN_PROB = '0.6'
 
 [mounts]
   source = 'trade_data'

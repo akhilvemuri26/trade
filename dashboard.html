@@ -128,6 +128,14 @@
     <tbody id="positions-body"><tr><td colspan="13" class="empty">No open positions</td></tr></tbody>
   </table>
 
+  <h2>Market scores <span class="hint" id="market-scores-hint">model P(profitable swing) per open market — BET vs SKIP</span></h2>
+  <table>
+    <thead><tr>
+      <th>Decision</th><th>Title</th><th>Sport</th><th>YES ask</th><th>Model score</th><th>Range</th><th>Bets</th><th>Hrs</th><th>Volume</th><th>Ticker</th>
+    </tr></thead>
+    <tbody id="market-scores-body"><tr><td colspan="10" class="empty">Loading...</td></tr></tbody>
+  </table>
+
   <h2>All trades <span class="hint">filter by strategy</span></h2>
   <div class="toolbar">
     <label>Strategy <select id="trade-filter"><option value="">All</option></select></label>
@@ -295,6 +303,58 @@ function populateFilters(d) {
   if (names.includes(cur)) sel.value = cur;
 }
 
+function decisionBadge(d) {
+  const map = {
+    BET: ['badge-ok', 'BET'],
+    SKIP: ['badge-warn', 'SKIP'],
+    OUT_OF_SCOPE: ['', 'out of scope'],
+    NO_MODEL: ['badge-warn', 'no model'],
+  };
+  const [cls, label] = map[d] || ['', d];
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+async function loadMarketScores() {
+  const body = document.getElementById('market-scores-body');
+  const hint = document.getElementById('market-scores-hint');
+  try {
+    const resp = await fetch('/api/market-scores');
+    const d = await resp.json();
+    const rows = d.markets || [];
+    const c = d.counts || {};
+    const when = d.scanned_at ? new Date(d.scanned_at * 1000).toLocaleTimeString() : '--';
+    hint.textContent = d.model_gate_enabled
+      ? `model P(profitable swing) per market · threshold ${d.model_min_prob} · ${c.bet || 0} bet / ${c.skip || 0} skip / ${c.out_of_scope || 0} out of scope · scanned ${when}`
+      : `model gate disabled · ${rows.length} markets · scanned ${when}`;
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="10" class="empty">No markets in this scan</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(r => {
+      const score = r.model_prob != null ? r.model_prob.toFixed(3) : '—';
+      const range = (r.model_prob_min != null && r.model_prob_max != null)
+        ? `${r.model_prob_min.toFixed(2)}–${r.model_prob_max.toFixed(2)}` : '—';
+      const bets = r.in_scope ? `${r.strategies_betting}/${r.strategies_total}` : '—';
+      const hrs = r.hours_to_resolution != null ? r.hours_to_resolution.toFixed(1) : '—';
+      const scoreCls = r.decision === 'BET' ? 'positive' : (r.decision === 'SKIP' ? 'negative' : 'muted');
+      return `<tr>
+        <td>${decisionBadge(r.decision)}</td>
+        <td class="title-cell" title="${(r.title || '').replace(/"/g, '')}">${(r.title || '').slice(0, 40)}</td>
+        <td>${sportBadge(r.sport)}</td>
+        <td>$${(r.yes_ask || 0).toFixed(2)}</td>
+        <td class="${scoreCls}">${score}</td>
+        <td class="muted">${range}</td>
+        <td>${bets}</td>
+        <td>${hrs}</td>
+        <td>${Math.round(r.volume || 0).toLocaleString()}</td>
+        <td><code>${r.ticker}</code></td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    body.innerHTML = `<tr><td colspan="10" class="empty">Error: ${e.message}</td></tr>`;
+  }
+}
+
 async function refresh() {
   try {
     const url = selectedRunId === 'current' ? '/api/status' : `/api/runs/${selectedRunId}/status`;
@@ -414,6 +474,14 @@ async function refresh() {
           <td><code>${p.ticker}</code></td>
         </tr>`;
       }).join('');
+    }
+
+    if (isArchived) {
+      document.getElementById('market-scores-body').innerHTML =
+        '<tr><td colspan="10" class="empty">Live model scores only shown for the current run</td></tr>';
+      document.getElementById('market-scores-hint').textContent = 'current run only';
+    } else {
+      loadMarketScores();
     }
 
     populateFilters(d);

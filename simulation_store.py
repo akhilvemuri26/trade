@@ -317,6 +317,32 @@ def archive_and_clear_positions() -> Optional[Path]:
     return dest
 
 
+def reclaim_archive_space() -> None:
+    """Free volume space before archiving by deleting prior archive snapshots and
+    accumulated per-strategy logs. The live run's data (positions/, current
+    results JSON, paper_state, manifest, ledger) is untouched — only the historical
+    archive/ snapshots (runs 1 & 2 copies) and results/logs/* are purged."""
+    import shutil
+    from paths import LOGS_DIR
+
+    if ARCHIVE_DIR.exists():
+        for entry in ARCHIVE_DIR.iterdir():
+            try:
+                if entry.is_dir():
+                    shutil.rmtree(entry, ignore_errors=True)
+                else:
+                    entry.unlink(missing_ok=True)
+            except OSError:
+                pass
+    if LOGS_DIR.exists():
+        for log in LOGS_DIR.glob("*"):
+            try:
+                if log.is_file():
+                    log.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 def archive_and_reset_simulation(
     paper,
     initial_balance: float,
@@ -329,6 +355,7 @@ def archive_and_reset_simulation(
     from paths import POSITIONS_DIR, RESULTS_DIR
 
     ensure_simulation_dirs()
+    reclaim_archive_space()
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     dest = ARCHIVE_DIR / f"sim_reset_{ts}"
     dest.mkdir(parents=True, exist_ok=True)

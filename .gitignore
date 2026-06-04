@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
+.DS_Store
 .pytest_cache/
 .venv/
 .env
@@ -12,3 +13,12 @@ results/
 .cursor/
 agent-tools/
 *.plan.md
+data/ml/
+ml/artifacts/
+# Runtime simulation state (DATA_DIR; lives on the Fly volume in prod)
+ledger/
+archive/
+paper_state.json
+simulation_manifest.json
+runs.json
+market_scores.json

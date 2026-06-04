@@ -11,3 +11,5 @@ results/
 .cursor
 agent-tools
 *.plan.md
+data/ml/
+ml/__pycache__
