@@ -125,6 +125,21 @@ def mark_manifest_stopped(final_pl: Optional[dict] = None) -> None:
     save_manifest(manifest)
 
 
+def mark_manifest_running() -> None:
+    """Reset a resumed run's manifest back to 'running'.
+
+    On a Fly deploy/restart the previous process marks the manifest 'stopped'
+    (SIGTERM handler). When the next process resumes the same run, the status
+    must be flipped back or the dashboard shows a live run as 'stopped'.
+    """
+    manifest = load_manifest()
+    if not manifest:
+        return
+    manifest["status"] = "running"
+    manifest["ended_at"] = None
+    save_manifest(manifest)
+
+
 def save_paper_state(paper) -> None:
     ensure_simulation_dirs()
     payload = {

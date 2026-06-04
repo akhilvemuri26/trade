@@ -50,6 +50,7 @@ from simulation_store import (
     load_runs_index,
     load_archived_run,
     load_archived_trades,
+    mark_manifest_running,
     mark_manifest_stopped,
     purge_orphan_positions,
     rebuild_strategy_trades_from_ledger,
@@ -867,6 +868,11 @@ def _init_simulation(paper: PaperExecutor) -> dict:
             manifest = create_manifest(STRATEGIES, PAPER_BALANCE)
         else:
             logger.info("Resuming simulation run_id=%s", manifest.get("run_id"))
+            # The prior process marked the manifest 'stopped' on SIGTERM; flip
+            # it back so the dashboard reflects the resumed, live run.
+            mark_manifest_running()
+            manifest["status"] = "running"
+            manifest["ended_at"] = None
 
     set_persist_hooks(
         lambda: save_paper_state(paper),
