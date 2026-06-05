@@ -899,6 +899,8 @@ async def main():
     async with KalshiClient() as kalshi:
         traders = [VirtualTrader(config, kalshi, paper=paper) for config in STRATEGIES]
         replayed = rebuild_strategy_trades_from_ledger(traders)
+        for _t in traders:
+            _t.rehydrate_entered_tickers()
         replay_total = sum(replayed.values())
         if replay_total:
             logger.info("Replayed %d strategy trade rows from ledger", replay_total)

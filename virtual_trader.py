@@ -122,6 +122,15 @@ class VirtualTrader:
         self._max_risk = config.get("max_risk", 50)
         self._max_positions = config.get("max_positions", 3)
         self._underdog_max = config.get("underdog_max_price", 0.45)
+        # Phase 6 entry filters + re-entry guard (run 6).
+        self._min_entry_price = config.get("min_entry_price", 0.0)
+        self._min_hours_to_resolution = config.get("min_hours_to_resolution", 0.0)
+        self._one_entry_per_game = config.get("one_entry_per_game", False)
+        self._entered_tickers: set[str] = set()
+        # Absolute live scores accumulated from the ESPN feed (process_score),
+        # used for best-effort in-game features at entry (Track B edge model).
+        self._current_score: dict[str, int] = {}
+        self._last_score_ts: dict[str, float] = {}
         self._sports = set(config.get("sports", []))
         self._enter_all_markets = config.get("enter_all_markets", False)
         self._ignore_global_risk_cap = config.get("ignore_global_risk_cap", False)
@@ -184,6 +193,60 @@ class VirtualTrader:
             "selected_team": selected,
             "selected_side": side,
         }
+
+    def rehydrate_entered_tickers(self) -> None:
+        """Rebuild the re-entry guard set from replayed ledger trades after a
+        restart/resume, so run 6 doesn't re-enter games already traded this run."""
+        self._entered_tickers = {
+            t.get("ticker") for t in self._trades
+            if t.get("action") == "buy" and t.get("ticker")
+        }
+
+    def _ingame_state(self, market: Market, side_ctx: dict) -> dict:
+        """Best-effort live score snapshot for the market's teams at entry.
+
+        Uses scores accumulated from the ESPN feed (process_score), fuzzy-matching
+        the market's team labels to feed team names. Never raises -- on any miss it
+        returns nulls so entry logging/execution is unaffected. Feeds Track B.
+        """
+        state = {
+            "entry_score_diff": None,
+            "entry_team_score": None,
+            "entry_opp_score": None,
+            "entry_is_live": False,
+            "entry_seconds_since_score": None,
+        }
+        try:
+            prefix = f"{(market.sport or '').lower()}:"
+            keyed = {
+                k[len(prefix):]: v for k, v in self._current_score.items()
+                if k.startswith(prefix)
+            }
+            if not keyed:
+                return state
+            names = list(keyed.keys())
+
+            def _match(label):
+                if not label:
+                    return None
+                r = fuzz_process.extractOne(label, names, score_cutoff=FUZZY_THRESHOLD)
+                return r[0] if r else None
+
+            team = _match(side_ctx.get("selected_team") or side_ctx.get("yes_label"))
+            opp = _match(side_ctx.get("no_label"))
+            if team is not None:
+                state["entry_team_score"] = keyed[team]
+                state["entry_is_live"] = True
+                lt = self._last_score_ts.get(prefix + team)
+                if lt:
+                    state["entry_seconds_since_score"] = round(time.time() - lt)
+            if opp is not None:
+                state["entry_opp_score"] = keyed[opp]
+            if team is not None and opp is not None:
+                state["entry_score_diff"] = keyed[team] - keyed[opp]
+        except Exception:
+            pass
+        return state
 
     def _detect_run(self, event: ScoreEvent) -> Optional[dict]:
         """Per-trader run detection with isolated thresholds."""
@@ -254,12 +317,21 @@ class VirtualTrader:
                 continue
             if self._positions.has_position(market.ticker):
                 continue
+            if self._one_entry_per_game and market.ticker in self._entered_tickers:
+                # Re-entry guard (Phase 6): one position per game per strategy.
+                # Kills the stop -> re-buy -> stop churn that lost ~$5k in run 5.
+                continue
+            if market.yes_ask < self._min_entry_price:
+                continue
             if market.yes_ask > self._underdog_max or market.yes_ask <= 0:
                 continue
             if market.resolves_at is None:
                 continue
             hours_to_resolve = (market.resolves_at - time.time()) / 3600
             if hours_to_resolve <= 0 or hours_to_resolve > MAX_HOURS_TO_RESOLUTION:
+                continue
+            if hours_to_resolve < self._min_hours_to_resolution:
+                # Avoid near-decided games (Phase 6: <3h entries were ~-49% ROI).
                 continue
 
             model_prob = None
@@ -380,7 +452,10 @@ class VirtualTrader:
                         round(hours_to_resolve, 3) if hours_to_resolve is not None else None
                     ),
                 }
-                trade.update(self._side_context(market.title, result.ticker, "yes"))
+                side_ctx = self._side_context(market.title, result.ticker, "yes")
+                trade.update(side_ctx)
+                trade.update(self._ingame_state(market, side_ctx))
+                self._entered_tickers.add(result.ticker)
                 self._trades.append(trade)
                 self._log_event("TRADE_EXECUTED", trade)
                 record_trade(
@@ -595,6 +670,10 @@ class VirtualTrader:
             return
 
         self._score_events_seen += 1
+        # Track absolute current scores for entry-time in-game features (Track B).
+        skey = f"{event.sport.value}:{event.team}"
+        self._current_score[skey] = event.new_score
+        self._last_score_ts[skey] = event.timestamp
         self._log_event("SCORE_UPDATE", {
             "sport": event.sport.value,
             "team": event.team,
