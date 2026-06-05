@@ -34,7 +34,9 @@ EXIT_ACTIONS = ("sell", "lock", "settle")
 # Passthrough entry-state fields logged on run-5+ buy rows (absent earlier).
 MICRO_FIELDS = (
     "entry_spread", "entry_market_width", "hours_to_resolution",
-    "entry_yes_ask", "entry_no_ask", "volume",
+    "entry_yes_ask", "entry_no_ask", "entry_volume",
+    # in-game (run 6+): best-effort live score state at entry
+    "entry_score_diff", "entry_is_live", "entry_seconds_since_score",
 )
 
 
