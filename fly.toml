@@ -26,14 +26,18 @@ primary_region = 'sjc'
   # the USD swing thresholds PROFIT_SCALE scaled, so this is effectively unused.
   PROFIT_SCALE = '1.0'
   # Set to '1' once to archive everything and reset wallet to PAPER_BALANCE.
-  # Run 5 launch: flip to '1' for the first deploy (archives Run 4, starts
-  # Run 5), then back to '0' and redeploy so restarts resume instead of resetting.
+  # Run 6 launch: flip to '1' for the first deploy (archives Run 5, starts
+  # Run 6), then back to '0' and redeploy so restarts resume instead of resetting.
   FRESH_EXPERIMENT = '0'
   EXIT_SCAN_INTERVAL = '30'
   # Run 5: ML entry gate OFF (it optimized win-rate, not EV, and fed the
   # winner-clipping). Re-enable only after the model is relabeled to predict EV.
   USE_MODEL_GATE = '0'
   MODEL_MIN_PROB = '0.6'
+  # Run 6: re-entry guard + entry filters (defaults also baked into strategy_config).
+  ONE_ENTRY_PER_GAME = '1'
+  MIN_ENTRY_PRICE = '0.20'
+  MIN_HOURS_TO_RESOLUTION = '3'
 
 [mounts]
   source = 'trade_data'
