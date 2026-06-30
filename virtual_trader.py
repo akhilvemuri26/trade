@@ -27,6 +27,7 @@ from strategies.exit_rules import (
 from strategy_config import MAX_HOURS_TO_RESOLUTION, MAX_TOTAL_RISK
 from paths import LOGS_DIR, POSITIONS_DIR, RESULTS_DIR, ensure_data_dirs
 from simulation_store import record_trade
+from team_matching import match_feed_team
 
 logger = logging.getLogger(__name__)
 
@@ -226,14 +227,17 @@ class VirtualTrader:
                 return state
             names = list(keyed.keys())
 
-            def _match(label):
-                if not label:
-                    return None
-                r = fuzz_process.extractOne(label, names, score_cutoff=FUZZY_THRESHOLD)
-                return r[0] if r else None
-
-            team = _match(side_ctx.get("selected_team") or side_ctx.get("yes_label"))
-            opp = _match(side_ctx.get("no_label"))
+            yes_code = side_ctx.get("yes_ticker_code") or ""
+            sport_key = (market.sport or "").lower()
+            selected = side_ctx.get("selected_team") or side_ctx.get("yes_label")
+            if side_ctx.get("selected_side") == "no":
+                team = match_feed_team(
+                    side_ctx.get("no_label") or selected, yes_code, names, sport=sport_key,
+                )
+                opp = match_feed_team(side_ctx.get("yes_label"), yes_code, names, sport=sport_key)
+            else:
+                team = match_feed_team(selected, yes_code, names, sport=sport_key)
+                opp = match_feed_team(side_ctx.get("no_label"), "", names, sport=sport_key)
             if team is not None:
                 state["entry_team_score"] = keyed[team]
                 state["entry_is_live"] = True

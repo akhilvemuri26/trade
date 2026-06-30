@@ -82,4 +82,16 @@ _FILTER_COHORTS = [
     _strat("hold_nofilter", exit_mode="hold", min_entry_price=0.0, min_hours_to_resolution=0.0),
 ]
 
-STRATEGIES = _EXIT_COHORTS + _FILTER_COHORTS
+# Production strategy (Run 7+) — single cohort deployed on Fly.
+PROD_STRATEGY = _strat(
+    "prod_hold_stop50",
+    exit_mode="hold",
+    stop_loss_pct=0.50,
+    max_risk=float(os.getenv("MAX_RISK_PER_TRADE", "5")),
+    max_positions=int(os.getenv("MAX_POSITIONS", "40")),
+    ignore_global_risk_cap=False,
+)
+
+_EXPERIMENT_STRATEGIES = _EXIT_COHORTS + _FILTER_COHORTS
+_STRATEGY_SET = os.getenv("STRATEGY_SET", "experiment").strip().lower()
+STRATEGIES = [PROD_STRATEGY] if _STRATEGY_SET == "prod" else _EXPERIMENT_STRATEGIES

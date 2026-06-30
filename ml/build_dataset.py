@@ -64,6 +64,14 @@ def _parse_strategy_name(name: str) -> dict:
                 cfg["min_sell_profit_usd"] = float(amt)
             if kind:
                 cfg["min_lock_profit_usd"] = float(kind)
+    elif "stop50" in name or name.endswith("_stop50"):
+        cfg["exit_mode"] = "hold"
+        cfg["stop_loss_pct"] = 0.50
+    elif "stop30" in name or name.endswith("_stop30"):
+        cfg["exit_mode"] = "hold"
+        cfg["stop_loss_pct"] = 0.30
+    elif name.startswith("prod_") or name.startswith("hold"):
+        cfg["exit_mode"] = "hold"
     return cfg
 
 

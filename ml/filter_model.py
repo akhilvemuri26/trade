@@ -1,15 +1,13 @@
 """Track A: entry-quality filter model -- learn which games are better to bet.
 
 Predicts P(position is profitable) from ENTRY-TIME features only (no exit-policy
-features, so no leakage). Walk-forward: fit runs 2-3, test runs 4-5. Reports
+features, so no leakage). Walk-forward: fit runs 4-6, test run 7. Reports
 whether gating on the model beats the hand-picked price>=0.20 filter and the
 bet-all baseline on realized ROI, and saves a calibrated model + report.
 
 Microstructure (spread/width/volume/time-to-resolution) and in-game (score_diff/
-is_live) features only exist for run 5+/run 6, so they're auto-included ONLY when
-the train split actually has them (it won't for a 2-3 train split -> this is the
-"broad" price/sport/time model). Re-run after run 6 accumulates settled games to
-pull the in-game features in -- that's the higher-upside Track B retrain.
+is_live) features exist for run 5+/run 6+; they're auto-included when the train
+split has sufficient coverage. Run 7 is the first prod holdout with in-game data.
 
 Usage: python -m ml.filter_model
 """
@@ -31,8 +29,8 @@ from ml.build_dataset import _load_rows
 from ml.compare import fifo_positions
 
 ART = Path(__file__).resolve().parent / "artifacts"
-TRAIN_RUNS = {2, 3}
-TEST_RUNS = {4, 5}
+TRAIN_RUNS = {4, 5, 6}
+TEST_RUNS = {7}
 PRICE_FLOOR = 0.20  # the optimizer's hand-picked filter, as a baseline to beat
 
 BASE_FEATURES = ["entry_price", "log_odds", "sport_mlb", "sport_nba", "sport_nhl",
