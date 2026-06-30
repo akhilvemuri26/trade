@@ -17,10 +17,14 @@ primary_region = 'sjc'
   PLAIN_LOGS = 'true'
   EXECUTOR_URL = 'http://127.0.0.1:8100'
   TEST_DURATION = '0'
-  PAPER_BALANCE = '20000'
+  PAPER_BALANCE = '200'
+  # Production Run 7+: single strategy, $5/trade stake.
+  STRATEGY_SET = 'prod'
+  MAX_RISK_PER_TRADE = '5'
+  MAX_POSITIONS = '40'
   # Run 5: stake frozen at the backtested $25 (was $50 in Run 4 — never drift
   # the stake from what was backtested).
-  MAX_RISK_PER_TRADE = '25'
+  MAX_RISK_PER_TRADE = '5'
   MAX_TOTAL_RISK = '100000'
   # Run 5 exit modes (hold / take_profit) use fraction/percent thresholds, not
   # the USD swing thresholds PROFIT_SCALE scaled, so this is effectively unused.

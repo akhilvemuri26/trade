@@ -214,6 +214,35 @@ def main() -> None:
         out(sp[["sport", "n", "win%", "net"]].to_string(index=False))
         out("")
 
+        if pos["entry_score_diff"].notna().any():
+            out("### by ENTRY SCORE DIFF (in-game, run 6+)")
+            scored = pos[pos["entry_score_diff"].notna()].copy()
+            for label, lo, hi in [
+                ("trailing", -999, 0),
+                ("tied", 0, 0.1),
+                ("leading", 0.1, 999),
+            ]:
+                sub = scored[(scored["entry_score_diff"] >= lo) & (scored["entry_score_diff"] < hi)]
+                if len(sub) == 0:
+                    continue
+                cost = sub["cost"].sum()
+                net = sub["net_profit"].sum()
+                out(f"  {label}: n={len(sub)} win%={100*sub['profitable'].mean():.1f} "
+                    f"net=${net:.2f} roi={100*net/cost:.1f}%")
+            out("")
+
+        if pos["entry_is_live"].notna().any():
+            out("### by LIVE vs PREGAME (run 6+)")
+            for live_val, label in [(True, "live"), (False, "pregame")]:
+                sub = pos[pos["entry_is_live"] == live_val]
+                if len(sub) == 0:
+                    continue
+                cost = sub["cost"].sum()
+                net = sub["net_profit"].sum()
+                out(f"  {label}: n={len(sub)} win%={100*sub['profitable'].mean():.1f} "
+                    f"net=${net:.2f} roi={100*net/cost:.1f}%")
+            out("")
+
     ART_DIR.mkdir(parents=True, exist_ok=True)
     (ART_DIR / "cohort_report.md").write_text("\n".join(lines))
     print(f"\nSaved -> {ART_DIR / 'cohort_report.md'} and {OUT_DIR / 'cohort_summary.csv'}")
